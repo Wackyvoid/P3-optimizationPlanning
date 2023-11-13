@@ -41,18 +41,27 @@ static int numObstacles = 50;
 Vec2 circlePos[] = new Vec2[numObstacles]; //Circle positions
 float circleRad[] = new float[numObstacles];  //Circle radii
 
+static int numNodes = 500;
+
 //A box obstacle
 Vec2 boxTopLeft = new Vec2(100,100);
 float boxW = 100;
 float boxH = 250;
-float goalSpeed = 100;
+float goalSpeed = 200;
 
+int numAgents = 30;
 Vec2 startPos = new Vec2(100,500);
 Vec2 goalPos = new Vec2(500,200);
-Vec2 agentPos = new Vec2(startPos.x, startPos.y);
-Vec2 agentVel = goalPos.minus(agentPos);
-Vec2 agentAcc = new Vec2(0, 0);
+Vec2[] agentPos = new Vec2[numAgents];
+Vec2[] agentVel = new Vec2[numAgents];
+Vec2[] agentAcc = new Vec2[numAgents];
+Vec2[] agentGoal = new Vec2[numAgents];
+ArrayList<Vec2>[] agentPath = new ArrayList[numAgents];
+int agentSize = 20;
 
+float tH = 1;
+float maxF = 100;
+float maxSep = 40;
 
 void placeRandomObstacles(){
   //Initial obstacle position
@@ -63,12 +72,36 @@ void placeRandomObstacles(){
 }
 
 int strokeWidth = 2;
+
+void resetPaths() {
+   for (int i = 0; i < numAgents; i++) {
+    agentGoal[i] = new Vec2(random(goalPos.x - goalRad,goalPos.x + goalRad), random(goalPos.y - goalRad,goalPos.y + goalRad));
+    runBFS(closestNode(agentPos[i]),closestNode(agentGoal[i]));
+    agentPath[i] = new ArrayList<>((ArrayList)path.clone());
+    agentPath[i].add(agentGoal[i]);
+    vis[i] = new ArrayList<>(Collections.nCopies(agentPath[i].size(), false));
+  }
+  runBFS(closestNode(startPos), closestNode(goalPos));
+}
 void setup(){
   size(1024,768);
-  agentVel.setToLength(goalSpeed);
   placeRandomObstacles();
+  placeAgents();
   buildPRM(circlePos, circleRad, boxTopLeft, boxW, boxH);
-  runBFS(closestNode(startPos),closestNode(goalPos));
+  resetPaths();
+}
+
+int startRad = 200, goalRad = 200;
+void placeAgents() {
+   for (int i = 0; i < numAgents; i++){
+    agentPos[i] = new Vec2(random(startPos.x - startRad,startPos.x + startRad),random(startPos.y - startRad,startPos.y + startRad));
+    agentGoal[i] = new Vec2(random(goalPos.x - goalRad,goalPos.x + goalRad), random(goalPos.y - goalRad,goalPos.y + goalRad));
+    //agentGoal[i] = new Vec2(goalPos.x, goalPos.y);
+    agentVel[i] = agentGoal[i].minus(agentPos[i]);
+    agentVel[i].setToLength(goalSpeed);
+    agentAcc[i] = new Vec2(0, 0);
+    movingTo[i] = -1;  
+  }
 }
 
 void draw(){
@@ -99,7 +132,8 @@ void draw(){
   //circle(startPos.x,startPos.y,20);
   
   fill(20,250,60);
-  circle(agentPos.x,agentPos.y,20);
+  for (int i = 0; i < numAgents; i++)
+    circle(agentPos[i].x,agentPos[i].y,agentSize);
   
   fill(250,30,50);
   circle(nodePos[goalNode].x,nodePos[goalNode].y,20);
@@ -108,27 +142,128 @@ void draw(){
   //Draw Planned Path
   stroke(20,255,40);
   strokeWeight(5);
-  for (int i = 0; i < path.size()-1; i++){
-    int curNode = path.get(i);
-    int nextNode = path.get(i+1);
-    line(nodePos[curNode].x,nodePos[curNode].y,nodePos[nextNode].x,nodePos[nextNode].y);
+  for (int i = 0; i < path.size() - 1; i++) {
+      Vec2 curNode = path.get(i);
+      Vec2 nextNode =path.get(i + 1);
+      line(curNode.x,curNode.y,nextNode.x, nextNode.y);
   }
-  
+ 
 }
 
-int movingTo = -1;
-void moveAgent(float dt) {
-  println("movingTo = " + movingTo);
-  if (movingTo == -1 || (movingTo < path.size() && nodePos[path.get(movingTo)].distanceTo(agentPos) < 10)) {
-    movingTo++;
-    if (movingTo < path.size()) {
-      agentVel = nodePos[path.get(movingTo)].minus(agentPos);
-      agentVel.setToLength(goalSpeed);
-    } else {
-      agentVel = new Vec2(0, 0);
-    }
+int[] movingTo = new int[numNodes];
+
+float rayCircleIntersectTime(Vec2 center, float r, Vec2 l_start, Vec2 l_dir){
+ 
+  //Compute displacement vector pointing from the start of the line segment to the center of the circle
+  Vec2 toCircle = center.minus(l_start);
+ 
+  //Solve quadratic equation for intersection point (in terms of l_dir and toCircle)
+  float a = l_dir.length()*l_dir.length();
+  float b = -2*dot(l_dir,toCircle); //-2*dot(l_dir,toCircle)
+  float c = toCircle.lengthSqr() - (r*r); //different of squared distances
+ 
+  float d = b*b - 4*a*c; //discriminant
+ 
+  if (d >=0 ){
+    //If d is positive we know the line is colliding
+    float t = (-b - sqrt(d))/(2*a); //Optimization: we typically only need the first collision!
+    if (t >= 0) return t;
+    return -1;
   }
-  agentPos.add(agentVel.times(dt));
+ 
+  return -1; //We are not colliding, so there is no good t to return
+}
+
+//Return at what time agents 1 and 2 collide if they keep their current velocities
+// or -1 if there is no collision.
+float computeTTC(Vec2 pos1, Vec2 vel1, float radius1, Vec2 pos2, Vec2 vel2, float radius2){
+  return rayCircleIntersectTime(pos1, radius1+radius2, pos2, vel1.minus(vel2)); 
+}
+
+// Compute attractive forces to draw agents to their goals,
+// and avoidance forces to anticipatory avoid collisions
+
+Vec2 computeAgentForces(int i){
+  //TODO: Make this better
+  Vec2 acc = new Vec2(0, 0);
+  for (int j = 0; j < numAgents; j++) {
+    float d = agentPos[i].distanceTo(agentPos[j]);
+    if (d < 1e-3 || d > maxSep) continue;
+    float t = computeTTC(agentPos[i], agentVel[i], agentSize, agentPos[j], agentVel[j], agentSize);
+    Vec2 fAvoid = agentPos[i].plus(agentVel[i].times(t)).minus(agentPos[j]).minus(agentVel[j].times(t));
+    float mag = 0;
+    if (t >= 0 && t <= tH)
+      mag = (tH - t) / (t + 1e-6);
+    mag = max(mag, maxF);
+    fAvoid.setToLength(mag);
+    acc.add(fAvoid);
+  }
+  
+  for (int j = 0; j < numObstacles; j++) {
+    Vec2 center = circlePos[j];
+    float r = circleRad[j];
+    float d = agentPos[i].distanceTo(center);
+    if (d < 1e-3 || d > maxSep) continue;
+    float t = computeTTC(agentPos[i], agentVel[i], agentSize, center, new Vec2(0, 0), r);
+    Vec2 fAvoid = agentPos[i].plus(agentVel[i].times(t)).minus(center);
+    float mag = 0;
+    if (t >= 0 && t <= tH)
+      mag = (tH - t) / (t + 1e-6);
+    mag = max(mag*3, maxF);
+    fAvoid.setToLength(mag);
+    acc.add(fAvoid);
+  }
+  return acc;
+}
+
+Vec2[] newVel = new Vec2[numAgents];
+Vec2[] newPos = new Vec2[numAgents];  
+//boolean[] vis = new boolean[numNodes];
+ArrayList<Boolean>[] vis = new ArrayList[numAgents];
+int closestNodeInPath(int i) {
+  int res = -1;
+  float min_d = Float.POSITIVE_INFINITY;
+  for (int j = 0; j < agentPath[i].size(); j++) {
+     Vec2 p = agentPath[i].get(j);
+     float d = p.distanceTo(agentPos[i]);
+      if (!vis[i].get(j) && d < min_d) {
+        min_d = d;
+        res = j;
+      }
+  }
+  return res;
+}
+
+void moveAgent(float dt) {
+  for (int i = 0; i < numAgents; i++) {
+    //println(Arrays.toString(agentVel));
+    agentAcc[i] = computeAgentForces(i);
+    /*if (movingTo[i] == -1 || (movingTo[i] < agentPath[i].size() && nodePos[agentPath[i].get(movingTo[i])].distanceTo(agentPos[i]) < 10)) {
+      movingTo[i]++;
+      if (movingTo[i] < agentPath[i].size()) {
+        float prevSpeed = agentVel[i].length();
+        agentVel[i] = nodePos[agentPath[i].get(movingTo[i])].minus(agentPos[i]);
+        agentVel[i].setToLength(prevSpeed);
+      } 
+    }*/
+    int closest = closestNodeInPath(i);
+    //println("agentPath " + i + ": " + agentPath[i]);
+    println("agent " + i + ": " + closest);
+  // println("agent " + i + " vel: " + agentVel[i]);
+    if (closest != -1) {
+        float prevSpeed = agentVel[i].length();
+        Vec2 p = agentPath[i].get(closest);
+        agentVel[i] = p.minus(agentPos[i]);
+        agentVel[i].setToLength(prevSpeed);
+        if (p.distanceTo(agentPos[i]) <= 10) {
+          vis[i].set(closest, true);
+        }
+    }
+    newVel[i] = agentVel[i].plus(agentAcc[i].times(dt));
+    newPos[i] = agentPos[i].plus(agentVel[i].times(dt));
+  }
+  agentVel = newVel.clone();
+  agentPos = newPos.clone();
 }
 
 Boolean paused = true;
@@ -142,7 +277,7 @@ int closestNode(Vec2 point){
   //TODO: Return the closest node the passed in point
   float minDist = point.distanceTo(nodePos[0]);
   int minIdx = 0;
-  for (int i = 0; i < numNodes; i++) {
+  for (int i = 1; i < numNodes; i++) {
     float curDist =  point.distanceTo(nodePos[i]);
     if (curDist < minDist) {
       minDist = curDist;
@@ -155,7 +290,7 @@ int closestNode(Vec2 point){
 void mousePressed(){
   goalPos = new Vec2(mouseX, mouseY);
   println("New Goal is",goalPos.x, goalPos.y);
-  runBFS(closestNode(startPos),closestNode(goalPos));
+  resetPaths();
 }
 
 
@@ -173,7 +308,7 @@ boolean pointInBox(Vec2 boxTopLeft, float boxW, float boxH, Vec2 pointPos){
 //Returns true if the point is inside a circle
 boolean pointInCircle(Vec2 center, float r, Vec2 pointPos){
   float dist = pointPos.distanceTo(center);
-  if (dist < r+2){ //small safety factor
+  if (dist <= r+agentSize){ //small safety factor
     return true;
   }
   return false;
@@ -303,10 +438,9 @@ hitInfo rayCircleListIntersect(Vec2[] centers, float[] radii, Vec2 l_start, Vec2
 // A Probabilistic Roadmap (PRM)
 ////////////////////////////////
 
-static int numNodes = 100;
 
 //The optimal path found along the PRM
-ArrayList<Integer> path = new ArrayList();
+ArrayList<Vec2> path = new ArrayList();
 int startNode, goalNode; //The actual node the PRM tries to connect do
 
 //Represent our graph structure as 3 lists
@@ -401,9 +535,9 @@ void runBFS(int startID, int goalID){
   }
   
   int prevNode = parent[goalID];
-  path.add(goalID);
+  path.add(nodePos[goalID]);
   while (prevNode >= 0){
-    path.add(prevNode);
+    path.add(nodePos[prevNode]);
     prevNode = parent[prevNode];
   }
   Collections.reverse(path);
