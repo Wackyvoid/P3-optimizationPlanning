@@ -57,10 +57,10 @@ Vec2[] agentVel = new Vec2[numAgents];
 Vec2[] agentAcc = new Vec2[numAgents];
 Vec2[] agentGoal = new Vec2[numAgents];
 ArrayList<Vec2>[] agentPath = new ArrayList[numAgents];
-int agentSize = 20;
+int agentSize = 10;
 
-float tH = 1;
-float maxF = 100;
+float tH = 10;
+float maxF = 1000;
 float maxSep = 40;
 
 void placeRandomObstacles(){
@@ -91,7 +91,7 @@ void setup(){
   resetPaths();
 }
 
-int startRad = 200, goalRad = 200;
+int startRad = 200, goalRad = 20;
 void placeAgents() {
    for (int i = 0; i < numAgents; i++){
     agentPos[i] = new Vec2(random(startPos.x - startRad,startPos.x + startRad),random(startPos.y - startRad,startPos.y + startRad));
@@ -115,6 +115,7 @@ void draw(){
   }
   
   //Draw the circle obstacles
+   fill(250,30,50);
   for (int i = 0; i < numObstacles; i++){
     Vec2 c = circlePos[i];
     float r = circleRad[i];
@@ -131,15 +132,26 @@ void draw(){
   circle(nodePos[startNode].x,nodePos[startNode].y,20);
   //circle(startPos.x,startPos.y,20);
   
-  fill(20,250,60);
-  for (int i = 0; i < numAgents; i++)
-    circle(agentPos[i].x,agentPos[i].y,agentSize);
-  
-  fill(250,30,50);
+  for (int i = 0; i < numAgents; i++) {
+    fill(20,250,60);
+    circle(agentPos[i].x,agentPos[i].y,agentSize*2);
+    Vec2 dir = agentVel[i];
+    dir.setToLength(agentSize);
+    Vec2 tip = agentPos[i].plus(dir);
+    Vec2 neg_tip = agentPos[i].minus(dir);
+    Vec2 neg_tip_rel = neg_tip.minus(agentPos[i]);
+    Vec2 left = neg_tip_rel.rotated((float)Math.toRadians(25.)).plus(agentPos[i]);
+    Vec2 right = neg_tip_rel.rotated((float)Math.toRadians(-25.)).plus(agentPos[i]);
+    fill(#ff8c00);
+    triangle(tip.x, tip.y, left.x, left.y, right.x, right.y);
+    //circle(left.x, left.y, 10);
+  }
+  fill(#ffae42);
   circle(nodePos[goalNode].x,nodePos[goalNode].y,20);
   //circle(goalPos.x,goalPos.y,20);
   
   //Draw Planned Path
+ 
   stroke(20,255,40);
   strokeWeight(5);
   for (int i = 0; i < path.size() - 1; i++) {
@@ -204,6 +216,13 @@ Vec2 computeAgentForces(int i){
     float r = circleRad[j];
     float d = agentPos[i].distanceTo(center);
     if (d < 1e-3 || d > maxSep) continue;
+    if (d <= agentSize + r) {
+      Vec2 dir = agentPos[i].minus(center);
+      agentPos[i].plus(dir);
+      dir.setToLength(agentVel[i].length());
+      agentVel[i].plus(dir);
+      continue;
+    }
     float t = computeTTC(agentPos[i], agentVel[i], agentSize, center, new Vec2(0, 0), r);
     Vec2 fAvoid = agentPos[i].plus(agentVel[i].times(t)).minus(center);
     float mag = 0;
@@ -251,10 +270,10 @@ void moveAgent(float dt) {
     println("agent " + i + ": " + closest);
   // println("agent " + i + " vel: " + agentVel[i]);
     if (closest != -1) {
-        float prevSpeed = agentVel[i].length();
+        //float prevSpeed = agentVel[i].length();
         Vec2 p = agentPath[i].get(closest);
         agentVel[i] = p.minus(agentPos[i]);
-        agentVel[i].setToLength(prevSpeed);
+        agentVel[i].setToLength(goalSpeed);
         if (p.distanceTo(agentPos[i]) <= 10) {
           vis[i].set(closest, true);
         }
@@ -262,6 +281,29 @@ void moveAgent(float dt) {
     newVel[i] = agentVel[i].plus(agentAcc[i].times(dt));
     newPos[i] = agentPos[i].plus(agentVel[i].times(dt));
   }
+  println("agentAcc: " + Arrays.toString(agentAcc));
+ /*
+  for (int i = 0; i < numAgents - 1; i++) {
+    for (int j = i + 1; j < numAgents; j++) {
+      float d = newPos[i].distanceTo(newPos[j]);
+      if (d <= agentSize + agentSize) {
+        Vec2 dir = newPos[i].minus(newPos[j]).times(.5);
+        newPos[i].plus(dir);
+        newPos[j].plus(dir.negate());
+      }
+   }
+  }
+  for (int i = 0; i < numAgents; i++) {
+    for (int j = 0; j < numObstacles; j++) {
+      Vec2 center = circlePos[j];
+      float r = circleRad[j];
+      float d = newPos[i].distanceTo(center);
+      if (d <= agentSize + r) {
+        Vec2 dir = newPos[i].minus(center);
+        newPos[i].plus(dir);
+      }
+    }
+  }*/
   agentVel = newVel.clone();
   agentPos = newPos.clone();
 }
@@ -596,6 +638,9 @@ public class Vec2 {
     x *= rhs;
     y *= rhs;
   }
+  public Vec2 negate() {
+    return new Vec2(-x, -y);
+  }
   
   public void clampToLength(float maxL){
     float magnitude = sqrt(x*x + y*y);
@@ -604,7 +649,9 @@ public class Vec2 {
       y *= maxL/magnitude;
     }
   }
-  
+  public Vec2 rotated(float theta) {
+    return new Vec2(x*cos(theta) - y*sin(theta), x*sin(theta) + y*cos(theta));
+  }
   public void setToLength(float newL){
     float magnitude = sqrt(x*x + y*y);
     x *= newL/magnitude;

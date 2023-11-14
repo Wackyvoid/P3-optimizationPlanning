@@ -125,8 +125,8 @@ hitInfo SquareSquareIntesect(Vec2 sq1, float w1, float h1, Vec2 sq2, float w2, f
 }
 
 void solve(){
-  Vec2 goal = new Vec2(mouseX, mouseY);
-  
+  Vec2 goal = (new Vec2(mouseX, mouseY)).rotate((float)Math.toRadians(-10), mega_root);
+  println("goal1:" + goal);
   Vec2 startToGoal, startToEndEffector;
   float dotProd, angleDiff;
   //Update 4th joint
@@ -149,7 +149,7 @@ void solve(){
     a3 = (wristangle/l2)-a0-a1-a2;
   }
   Vec2 sq2 = new Vec2(pos5.x-(100/2), pos5.y-(100/2));
-  //println(goal);
+ 
   hitInfo hitSquareSquare = SquareSquareIntesect(sq2, 100, 100, goal, l2, armW);
   if(hitSquareSquare.hit){
     inPresent1 = true;
@@ -213,11 +213,15 @@ void solve(){
   
   //megalink
   startToGoal = goal.minus(mega_root);
+   println("startToGoal:", startToGoal);
+   println("startToEndEffector:", startToEndEffector);
   if (startToGoal.length() < .0001) return;
   startToEndEffector = endPoint.minus(mega_root);
   dotProd = dot(startToGoal.normalized(),startToEndEffector.normalized());
+  println("dotProd:", dotProd);
   dotProd = clamp(dotProd,-1,1);
   angleDiff = acos(dotProd);
+   println("angleDiff: " + angleDiff);
   if (cross(startToGoal,startToEndEffector) < 0)
     mega_a += angleDiff;
   else
@@ -235,7 +239,9 @@ void fk(){
 }
 
 void solve2(){
-  Vec2 goal = new Vec2(mouseX, mouseY);
+  Vec2 goal =  (new Vec2(mouseX, mouseY)).rotate((float)Math.toRadians(10), mega_root);
+  
+  println("goal2:", goal);
   
   Vec2 startToGoal, startToEndEffector;
   float dotProd, angleDiff;
@@ -251,9 +257,11 @@ void solve2(){
     a32 -= angleDiff;
   
   Vec2 sq1 = new Vec2(pos4.x-(100/2), pos4.y-(100/2));
+  //Vec2 sq2 = new Vec2(pos5.x-(100/2), pos5.y-(100/2));
   //hitInfo SquareSquareIntesect(Vec2 sq1, float w1, float h1, Vec2 sq2, float w2, float h2){
-  println(goal);
-  hitInfo hitSquareSquare = SquareSquareIntesect(sq1, 100, 100, goal, l2, armW);
+  
+  hitInfo hitSquareSquare = SquareSquareIntesect(sq1, 100, 100, start_l32, l2, armW);
+  //hitInfo hitSquareSquare = SquareSquareIntesect(sq2, 100, 100, goal, l2, armW);
   if(hitSquareSquare.hit){
     inPresent2 = true;
     //println("IN THE PRESENT");
@@ -323,11 +331,16 @@ void solve2(){
  
   //megalink
   startToGoal = goal.minus(mega_root);
+  println("startToGoal2:", startToGoal);
+  println("startToEndEffector2:", startToEndEffector);
   if (startToGoal.length() < .0001) return;
-  startToEndEffector = endPoint.minus(mega_root);
+  startToEndEffector = endPoint2.minus(mega_root);
+  //WORKING
   dotProd = dot(startToGoal.normalized(),startToEndEffector.normalized());
+  println("dotProd2:", dotProd);
   dotProd = clamp(dotProd,-1,1);
   angleDiff = acos(dotProd);
+  println("angleDiff2:", angleDiff);
   if (cross(startToGoal,startToEndEffector) < 0)
     mega_a2 += angleDiff;
   else
@@ -417,6 +430,7 @@ void draw(){
   //mega_a
   
   //pre - node 1
+  // good black rod
   pushMatrix();
   translate(mega_root.x,mega_root.y);
   rotate(mega_a);
@@ -442,6 +456,11 @@ void draw(){
   rect(0, -armW/2, l2, armW);
   popMatrix();
   
+  Vec2 end_l3 = start_l3.plus(new Vec2(l3, 0));
+  end_l3.rotate(a0+mega_a+a1+a2+a3, start_l3);
+  inPresent1 =  SquareSquareIntesect(pos5, 100, 100, end_l3, l2, armW).hit;
+  inPresent1 |= SquareSquareIntesect(pos4, 100, 100, end_l3, l2, armW).hit;
+  
   if (inPresent1){
     fill(255,255,255);
   }else{
@@ -459,10 +478,12 @@ void draw(){
   //mega_l
   //mega_a
   
+  // bad black rod - need fixing
   pushMatrix();
   translate(mega_root.x,mega_root.y);
   rotate(mega_a2);
-  //println("LEFT UPDATE a:", mega_a2, mega_a);
+  println("LEFT UPDATE a:", mega_a2, mega_a);
+  println("LEFT UPDATE l:", mega_l2, mega_l);
   rect(0, -armW/2, mega_l2, armW/2);
   popMatrix();
   
@@ -470,7 +491,6 @@ void draw(){
   pushMatrix();
   translate(start_r2.x,start_r2.y);
   rotate(a02+mega_a2);
-  //println("Right UPDATE", a02);
   rect(0, -armW/2, l02, armW);
   popMatrix();
   
@@ -486,6 +506,10 @@ void draw(){
   rect(0, -armW/2, l22, armW);
   popMatrix();
   
+  Vec2 end_l32 = start_l32.plus(new Vec2(l32, 0));
+  end_l32.rotate(a02+mega_a2+a12+a22+a32, start_l32);
+  inPresent2 =  SquareSquareIntesect(pos5, 100, 100, end_l32, l2, armW).hit;
+  inPresent2 |= SquareSquareIntesect(pos4, 100, 100, end_l32, l2, armW).hit;
   if (inPresent2){
     fill(255,255,255);
   }else{
@@ -533,6 +557,18 @@ public class Vec2 {
     x += rhs.x;
     y += rhs.y;
   }
+  public void rotate(float theta) {
+    float new_x = x*cos(theta) - y*sin(theta), new_y = x*sin(theta) + y*cos(theta);
+    x = new_x; y = new_y;
+  }
+  public Vec2 rotate(float theta, Vec2 origin) {
+    Vec2 res = this;
+    res.subtract(origin);
+    res.rotate(theta);
+    res.add(origin);
+    return res;
+  }
+  
   
   public Vec2 minus(Vec2 rhs){
     return new Vec2(x-rhs.x, y-rhs.y);
