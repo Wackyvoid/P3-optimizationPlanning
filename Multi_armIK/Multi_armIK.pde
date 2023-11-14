@@ -139,16 +139,24 @@ void solve(){
     a3 += angleDiff;
   else
     a3 -= angleDiff;
-  
+  /*TODO: Wrist joint limits here*/
+  //wrist joint, and limit it to be within +/- 90
+  float wristangle = (a0+a1+a2+a3) * l2;
+  //relative to the lower arm.
+  wristangle = clamp(wristangle,-90,90);
+  //println(wristangle, a2, (wristangle/l1)-a0-a1);
+  if (wristangle == -90 || wristangle == 90){
+    a3 = (wristangle/l2)-a0-a1-a2;
+  }
   Vec2 sq2 = new Vec2(pos5.x-(100/2), pos5.y-(100/2));
-  println(goal);
+  //println(goal);
   hitInfo hitSquareSquare = SquareSquareIntesect(sq2, 100, 100, goal, l2, armW);
   if(hitSquareSquare.hit){
     inPresent1 = true;
-    println("IN THE PRESENT");
+    //println("IN THE PRESENT");
   }else {
     inPresent1 = false;
-    println("NOPE");
+    //println("NOPE");
   }
   
   fk(); //Update link positions with fk (e.g. end effector changed)
@@ -163,21 +171,15 @@ void solve(){
     a2 += angleDiff;
   else
     a2 -= angleDiff;
-   
-  ///*TODO: Wrist joint limits here*/
-  ////wrist joint, and limit it to be within +/- 90
-  //float wristangle = (mega_a+a0+a1+a2) * l1;
-  ////relative to the lower arm.
-  
-  //wristangle = clamp(wristangle,-90,90);
-  //println("CUR ANGLE", wristangle);
-
-  //////println(wristangle, a2, (wristangle/l1)-a0-a1);
-  //if (wristangle == -90 || wristangle == 90){
-  //  a2 = (wristangle/l1)-a0-a1-mega_a;
-  //}
-  
-  
+  /*TODO: Wrist joint limits here*/
+  //wrist joint, and limit it to be within +/- 90
+  float underwristangle = (a0+a1+a2) * l1;
+  //relative to the lower arm.
+  underwristangle = clamp(underwristangle,-90,90);
+  //println(wristangle, a2, (wristangle/l1)-a0-a1);
+  if (underwristangle == -90 || underwristangle == 90){
+    a2 = (underwristangle/l2)-a0-a1;
+  }
   
   fk(); //Update link positions with fk (e.g. end effector changed)
   
@@ -254,10 +256,10 @@ void solve2(){
   hitInfo hitSquareSquare = SquareSquareIntesect(sq1, 100, 100, goal, l2, armW);
   if(hitSquareSquare.hit){
     inPresent2 = true;
-    println("IN THE PRESENT");
+    //println("IN THE PRESENT");
   }else {
     inPresent2 = false;
-    println("NOPE");
+    //println("NOPE");
   }
   //println(start_l32);
 
@@ -323,7 +325,6 @@ void solve2(){
   startToGoal = goal.minus(mega_root);
   if (startToGoal.length() < .0001) return;
   startToEndEffector = endPoint.minus(mega_root);
-  //WORKING
   dotProd = dot(startToGoal.normalized(),startToEndEffector.normalized());
   dotProd = clamp(dotProd,-1,1);
   angleDiff = acos(dotProd);
@@ -461,7 +462,7 @@ void draw(){
   pushMatrix();
   translate(mega_root.x,mega_root.y);
   rotate(mega_a2);
-  println("LEFT UPDATE a:", mega_a2, mega_a);
+  //println("LEFT UPDATE a:", mega_a2, mega_a);
   rect(0, -armW/2, mega_l2, armW/2);
   popMatrix();
   
@@ -469,7 +470,7 @@ void draw(){
   pushMatrix();
   translate(start_r2.x,start_r2.y);
   rotate(a02+mega_a2);
-  println("Right UPDATE", a02);
+  //println("Right UPDATE", a02);
   rect(0, -armW/2, l02, armW);
   popMatrix();
   
